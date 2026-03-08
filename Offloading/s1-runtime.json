@@ -1,0 +1,181 @@
+{
+  "target": "bmv2",
+  "p4info": "build/Offload.p4info.txt",
+  "bmv2_json": "build/Offload.json/Offload.json",
+  "table_entries": [
+    {
+      "table": "MyIngress.arp_forwarding",
+      "match": {
+        "hdr.arp.target_proto_addr": "10.0.1.1"
+      },
+      "action_name": "MyIngress.arp_forward",
+      "action_params": {
+        "port": 1
+      }
+    },
+    {
+      "table": "MyIngress.arp_forwarding",
+      "match": {
+        "hdr.arp.target_proto_addr": "10.0.2.2"
+      },
+      "action_name": "MyIngress.arp_forward",
+      "action_params": {
+        "port": 2
+      }
+    },
+    {
+      "table": "MyIngress.arp_forwarding",
+      "match": {
+        "hdr.arp.target_proto_addr": "10.0.3.3"
+      },
+      "action_name": "MyIngress.arp_forward",
+      "action_params": {
+        "port": 3
+      }
+    },
+    {
+      "table": "MyIngress.whitelist",
+      "match": {
+        "hdr.ipv4.srcAddr": "10.0.1.1",
+        "hdr.ipv4.dstAddr": "10.0.2.2"
+      },
+      "action_name": "MyIngress.allow_pair",
+      "action_params": {}
+    },
+    {
+      "table": "MyIngress.whitelist",
+      "match": {
+        "hdr.ipv4.srcAddr": "10.0.2.2",
+        "hdr.ipv4.dstAddr": "10.0.1.1"
+      },
+      "action_name": "MyIngress.allow_pair",
+      "action_params": {}
+    },
+    {
+      "table": "MyIngress.whitelist",
+      "match": {
+        "hdr.ipv4.srcAddr": "10.0.1.1",
+        "hdr.ipv4.dstAddr": "10.0.3.3"
+      },
+      "action_name": "MyIngress.allow_pair",
+      "action_params": {}
+    },
+    {
+      "table": "MyIngress.whitelist",
+      "match": {
+        "hdr.ipv4.srcAddr": "10.0.3.3",
+        "hdr.ipv4.dstAddr": "10.0.1.1"
+      },
+      "action_name": "MyIngress.allow_pair",
+      "action_params": {}
+    },
+    {
+      "table": "MyIngress.whitelist",
+      "match": {
+        "hdr.ipv4.srcAddr": "10.0.2.2",
+        "hdr.ipv4.dstAddr": "10.0.3.3"
+      },
+      "action_name": "MyIngress.allow_pair",
+      "action_params": {}
+    },
+    {
+      "table": "MyIngress.whitelist",
+      "match": {
+        "hdr.ipv4.srcAddr": "10.0.3.3",
+        "hdr.ipv4.dstAddr": "10.0.2.2"
+      },
+      "action_name": "MyIngress.allow_pair",
+      "action_params": {}
+    },
+    {
+      "table": "MyIngress.fwd_normal",
+      "match": {
+        "hdr.ipv4.dstAddr": [
+          "10.0.1.1",
+          32
+        ]
+      },
+      "action_name": "MyIngress.ipv4_forward",
+      "action_params": {
+        "dst": "00:00:00:00:01:01",
+        "src": "00:00:00:00:02:02",
+        "port": 1
+      }
+    },
+    {
+      "table": "MyIngress.fwd_normal",
+      "match": {
+        "hdr.ipv4.dstAddr": [
+          "10.0.2.2",
+          32
+        ]
+      },
+      "action_name": "MyIngress.ipv4_forward",
+      "action_params": {
+        "dst": "00:00:00:00:02:02",
+        "src": "00:00:00:00:01:01",
+        "port": 2
+      }
+    },
+    {
+      "table": "MyIngress.fwd_normal",
+      "match": {
+        "hdr.ipv4.dstAddr": [
+          "10.0.3.3",
+          32
+        ]
+      },
+      "action_name": "MyIngress.ipv4_forward",
+      "action_params": {
+        "dst": "00:00:00:00:03:03",
+        "src": "00:00:00:00:01:01",
+        "port": 3
+      }
+    },
+    {
+      "table": "MyIngress.fwd_vpn",
+      "match": {
+        "hdr.ipv4.dstAddr": [
+          "10.0.2.2",
+          32
+        ]
+      },
+      "action_name": "MyIngress.ipv4_forward",
+      "action_params": {
+        "dst": "00:00:00:00:03:03",
+        "src": "00:00:00:00:01:01",
+        "port": 3
+      }
+    },
+    {
+      "table": "MyIngress.fwd_vpn",
+      "match": {
+        "hdr.ipv4.dstAddr": [
+          "10.0.1.1",
+          32
+        ]
+      },
+      "action_name": "MyIngress.ipv4_forward",
+      "action_params": {
+        "dst": "00:00:00:00:01:01",
+        "src": "00:00:00:00:03:03",
+        "port": 1
+      }
+    },
+    {
+      "table": "MyIngress.fwd_vpn",
+      "match": {
+        "hdr.ipv4.dstAddr": [
+          "10.0.3.3",
+          32
+        ]
+      },
+      "action_name": "MyIngress.ipv4_forward",
+      "action_params": {
+        "dst": "00:00:00:00:03:03",
+        "src": "00:00:00:00:01:01",
+        "port": 3
+      }
+    }
+  ]
+}
