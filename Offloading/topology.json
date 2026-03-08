@@ -10,19 +10,25 @@
   },
   "hosts": {
     "h1": {
-      "ip": "10.0.1.1/8",
+      "ip": "10.0.1.1/24",
       "mac": "00:00:00:00:01:01",
-      "commands": []
+      "commands": [
+        "ip route add default dev eth0"
+      ]
     },
     "h2": {
-      "ip": "10.0.2.2/8",
+      "ip": "10.0.2.2/24",
       "mac": "00:00:00:00:02:02",
-      "commands": []
+      "commands": [
+        "ip route add default dev eth0"
+      ]
     },
     "hgw": {
-      "ip": "10.0.3.3/8",
+      "ip": "10.0.3.3/24",
       "mac": "00:00:00:00:03:03",
-      "commands": []
+      "commands": [
+        "ip route add default dev eth0"
+      ]
     }
   },
   "links": [

@@ -1,0 +1,111 @@
+=====VPN Only=====
+p4c --target bmv2 --arch v1model \
+  -o build/Offload_VPNOnly.json \
+  --p4runtime-files build/Offload_VPNOnly.p4info.txt \
+  Offload_VPNOnly.p4
+
+sudo PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python \
+python3 utils/run_exercise.py -t topology.json -b simple_switch_grpc \
+-j build/Offload_VPNOnly.json/Offload_VPNOnly.json
+
+sudo -E PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python \
+python3 p4runtime_controller_VPN.py \
+  --p4info build/Offload_VPNOnly.p4info.txt \
+  --bmv2-json build/Offload_VPNOnly.json/Offload_VPNOnly.json \
+  --addr 127.0.0.1:50051
+
+
+=====Offloading=====
+make clean && make
+
+sudo PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python \
+python3 utils/run_exercise.py -t topology.json -b simple_switch_grpc \
+-j build/Offload.json/Offload.json
+
+sudo -E PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python \
+python3 p4runtime_controller.py \
+  --p4info build/Offload.p4info.txt \
+  --bmv2-json build/Offload.json/Offload.json \
+  --addr 127.0.0.1:50051 \
+  --override 10.0.1.1,10.0.2.2,5000,1 \
+  --override 10.0.1.1,10.0.2.2,5001,0
+
+sudo -E PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python python3 p4runtime_controller_VPN.py   --p4info build/Offload.p4info.txt   --bmv2-json build/Offload.json/Offload.json   --addr 127.0.0.1:50051
+
+
+=====simple_switch_CLI=====
+simple_switch_CLI --thrift-port 9090
+mc_mgrp_create 1
+mc_node_create 0 1 2 3
+mc_node_associate 1 0
+
+
+=====Configure VPN gateway=====
+hgw sysctl -w net.ipv4.ip_forward=1
+hgw sysctl -w net.ipv4.conf.all.send_redirects=0
+hgw sysctl -w net.ipv4.conf.default.send_redirects=0
+hgw sysctl -w net.ipv4.conf.eth0.send_redirects=0
+
+=====Verify network=====
+net
+pingall
+
+=====Packet monitoring=====
+hgw tcpdump -nn -i eth0 &
+h2 tcpdump -nn -i eth0 &
+
+=====Latency benchmark (ICMP)=====
+h1 ping -c 20 -s 64 10.0.2.2
+h1 ping -c 20 -s 1200 10.0.2.2
+h1 ping -c 10 -s 1500 10.0.2.2
+
+=====TCP connection test=====
+h2 nc -l 5000 &
+h1 bash -c "echo test | nc 10.0.2.2 5000"
+h2 cat /tmp/*
+
+=====TCP throughput test=====
+h2 sh -c 'nc -l 5000 > /dev/null &'
+h1 time sh -c 'dd if=/dev/zero bs=1M count=50 2>/dev/null | timeout 20 nc 10.0.2.2 5000'
+
+=====UDP moderate traffic test=====
+h2 iperf -s -u &
+h1 iperf -c 10.0.2.2 -u -b 10M -l 500
+h1 iperf -c 10.0.2.2 -u -b 10M -l 1200
+h1 iperf -c 10.0.2.2 -u -b 10M -l 1600
+
+=====UDP stress test=====
+h1 iperf -c 10.0.2.2 -u -b 50M -l 1200
+
+=====Flow policy verification=====
+hgw sh -c 'tcpdump -nn -i eth0 "tcp[tcpflags] & tcp-syn != 0 and dst port 5001" -c 2 > /tmp/hgw5001.txt 2>&1 &'
+h2 sh -c 'timeout 5 nc -l 5001 > /tmp/recv5001.txt &'
+sh sleep 1
+h1 sh -c 'echo hello | timeout 3 nc 10.0.2.2 5001'
+sh sleep 1
+
+hgw cat /tmp/hgw5001.txt
+h2 cat /tmp/recv5001.txt
+
+=====Demonstrate offloading behavior=====
+hgw sh -c 'tcpdump -nn -i eth0 "tcp[tcpflags] & tcp-syn != 0 and (dst port 5000 or dst port 5001)" -c 4 > /tmp/hgw_flows.txt 2>&1 &'
+
+h2 sh -c 'timeout 5 nc -l 5000 > /tmp/recv5000.txt &'
+sh sleep 1
+h1 sh -c 'echo first | timeout 3 nc 10.0.2.2 5000'
+sh sleep 1
+
+h2 sh -c 'timeout 5 nc -l 5001 > /tmp/recv5001.txt &'
+sh sleep 1
+h1 sh -c 'echo second | timeout 3 nc 10.0.2.2 5001'
+sh sleep 1
+
+hgw cat /tmp/hgw_flows.txt
+h2 cat /tmp/recv5000.txt
+h2 cat /tmp/recv5001.txt
+
+=====Stop monitoring=====
+hgw pkill tcpdump
+h2 pkill nc
+h2 pkill tcpdump
+h2 pkill iperf

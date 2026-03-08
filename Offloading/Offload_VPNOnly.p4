@@ -1,9 +1,6 @@
 #include <core.p4>
 #include <v1model.p4>
 
-/* ========= User thresholds (bytes) =========
- * Note: uses standard_metadata.packet_length (whole packet length).
- */
 const bit<16> VPN_TH  = 1100;
 const bit<16> DROP_TH = 1500;
 
@@ -72,11 +69,9 @@ struct headers_t {
 }
 
 struct metadata_t {
-    bit<1>  use_vpn;
-    bit<1>  allowed;
+    bit<1> use_vpn;
+    bit<1> allowed;
 }
-
-/* ========= Parser ========= */
 
 parser MyParser(packet_in packet,
                 out headers_t hdr,
@@ -123,7 +118,6 @@ parser MyParser(packet_in packet,
     }
 }
 
-/* ========= Verify/Compute checksum ========= */
 control MyVerifyChecksum(inout headers_t hdr, inout metadata_t meta) {
     apply { }
 }
@@ -148,8 +142,6 @@ control MyComputeChecksum(inout headers_t hdr, inout metadata_t meta) {
         );
     }
 }
-
-/* ========= Ingress ========= */
 
 control MyIngress(inout headers_t hdr,
                   inout metadata_t meta,
@@ -199,7 +191,6 @@ control MyIngress(inout headers_t hdr,
             hdr.ipv4.srcAddr : exact;
             hdr.ipv4.dstAddr : exact;
             hdr.ipv4.protocol: exact;
-            //hdr.tcp.srcPort  : exact;
             hdr.tcp.dstPort  : exact;
         }
         actions = {
@@ -235,7 +226,6 @@ control MyIngress(inout headers_t hdr,
     }
 
     apply {
-        // Allow all ARP traffic: flood to multicast group 1
         if (hdr.arp.isValid()) {
             arp_flood(1);
             return;
@@ -246,45 +236,30 @@ control MyIngress(inout headers_t hdr,
             return;
         }
 
-        // 1) Whitelist gate
         whitelist.apply();
         if (meta.allowed == 0) {
             drop();
             return;
         }
 
-        // 2) New TCP handshake goes to VPN
-        if (hdr.tcp.isValid()) {
-            bit<1> syn = (bit<1>)((hdr.tcp.flags & 0x002) != 0);
-            bit<1> ack = (bit<1>)((hdr.tcp.flags & 0x010) != 0);
-            if (syn == 1 && ack == 0) {
-                meta.use_vpn = 1;
-            }
-        }
-
-        // 3) Optional controller override
         if (hdr.tcp.isValid()) {
             flow_policy.apply();
         }
 
-        // 4) DDoS / size steering based on packet length
         if ((bit<16>) standard_metadata.packet_length >= DROP_TH) {
             drop();
             return;
         }
 
-        // Do not re-send packets coming from the VPN gateway (port 3)
-        // back to the VPN again.
+        // VPN-only baseline:
+        // first hop from hosts goes to VPN,
+        // packets returning from hgw go direct.
         if (standard_metadata.ingress_port == 3) {
             meta.use_vpn = 0;
         } else {
-            if (meta.use_vpn == 0 &&
-                (bit<16>) standard_metadata.packet_length >= VPN_TH) {
-                meta.use_vpn = 1;
-            }
+            meta.use_vpn = 1;
         }
 
-        // 5) Forward based on chosen path
         if (meta.use_vpn == 1) {
             fwd_vpn.apply();
         } else {
@@ -299,7 +274,6 @@ control MyEgress(inout headers_t hdr,
     apply { }
 }
 
-/* ========= Deparser ========= */
 control MyDeparser(packet_out packet, in headers_t hdr) {
     apply {
         packet.emit(hdr.ethernet);
@@ -310,7 +284,6 @@ control MyDeparser(packet_out packet, in headers_t hdr) {
     }
 }
 
-/* ========= Main ========= */
 V1Switch(
     MyParser(),
     MyVerifyChecksum(),

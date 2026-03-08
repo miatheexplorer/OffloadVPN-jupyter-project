@@ -1,28 +1,4 @@
 #!/usr/bin/env python3
-"""
-p4runtime_controller.py
-
-Programs Offload.p4 on BMv2 simple_switch_grpc:
-- installs whitelist rules
-- installs normal and VPN forwarding rules
-- installs optional TCP flow overrides based on:
-    src IP, dst IP, protocol, dst TCP port
-
-Example:
-  export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
-  sudo -E python3 p4runtime_controller.py \
-    --p4info build/Offload.p4info.txt \
-    --bmv2-json build/Offload.json/Offload.json \
-    --addr 127.0.0.1:50051 \
-    --override 10.0.1.1,10.0.2.2,5000,1 \
-    --override 10.0.1.1,10.0.2.2,5001,0
-
-Override format:
-  --override SRC_IP,DST_IP,DST_PORT,USE_VPN
-  example:
-    --override 10.0.1.1,10.0.2.2,5000,1
-"""
-
 import argparse
 import os
 import sys
@@ -40,11 +16,7 @@ try:
     from p4runtime_lib.helper import P4InfoHelper
     print("[INFO] Successfully imported p4runtime_lib")
 except ModuleNotFoundError:
-    print(
-        "\n[ERROR] Could not import p4runtime_lib.\n"
-        "Set PYTHONPATH to p4lang/tutorials utils and run with sudo -E.\n",
-        file=sys.stderr,
-    )
+    print("[ERROR] Could not import p4runtime_lib", file=sys.stderr)
     sys.exit(1)
 
 
@@ -57,7 +29,7 @@ def ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
 
 
-def install_whitelist(p4info: P4InfoHelper, sw: Bmv2SwitchConnection, src: str, dst: str) -> None:
+def install_whitelist(p4info, sw, src, dst):
     entry = p4info.buildTableEntry(
         table_name="MyIngress.whitelist",
         match_fields={
@@ -71,16 +43,7 @@ def install_whitelist(p4info: P4InfoHelper, sw: Bmv2SwitchConnection, src: str, 
     print(f"[OK] whitelist allow {src} -> {dst}")
 
 
-def install_fwd_entry(
-    p4info: P4InfoHelper,
-    sw: Bmv2SwitchConnection,
-    table: str,
-    dst_ip: str,
-    prefix_len: int,
-    dst_mac: str,
-    src_mac: str,
-    port: int,
-) -> None:
+def install_fwd_entry(p4info, sw, table, dst_ip, prefix_len, dst_mac, src_mac, port):
     entry = p4info.buildTableEntry(
         table_name=table,
         match_fields={"hdr.ipv4.dstAddr": (dst_ip, prefix_len)},
@@ -95,8 +58,7 @@ def install_fwd_entry(
     print(f"[OK] {table}: {dst_ip}/{prefix_len} -> port{port}")
 
 
-def install_base_rules(p4info: P4InfoHelper, sw: Bmv2SwitchConnection) -> None:
-    # whitelist
+def install_base_rules_vpn_only(p4info, sw):
     install_whitelist(p4info, sw, "10.0.1.1", "10.0.2.2")
     install_whitelist(p4info, sw, "10.0.2.2", "10.0.1.1")
     install_whitelist(p4info, sw, "10.0.1.1", "10.0.3.3")
@@ -104,90 +66,48 @@ def install_base_rules(p4info: P4InfoHelper, sw: Bmv2SwitchConnection) -> None:
     install_whitelist(p4info, sw, "10.0.2.2", "10.0.3.3")
     install_whitelist(p4info, sw, "10.0.3.3", "10.0.2.2")
 
-    # normal path
+    # normal path after packet returns from gateway
     install_fwd_entry(
         p4info, sw, "MyIngress.fwd_normal",
         "10.0.2.2", 32,
-        "00:00:00:00:02:02", "00:00:00:00:01:01", 2,
+        "00:00:00:00:02:02", "00:00:00:00:03:03", 2
     )
     install_fwd_entry(
         p4info, sw, "MyIngress.fwd_normal",
         "10.0.1.1", 32,
-        "00:00:00:00:01:01", "00:00:00:00:02:02", 1,
+        "00:00:00:00:01:01", "00:00:00:00:03:03", 1
     )
     install_fwd_entry(
         p4info, sw, "MyIngress.fwd_normal",
         "10.0.3.3", 32,
-        "00:00:00:00:03:03", "00:00:00:00:01:01", 3,
+        "00:00:00:00:03:03", "00:00:00:00:01:01", 3
     )
 
-    # VPN path
+    # VPN first hop
     install_fwd_entry(
         p4info, sw, "MyIngress.fwd_vpn",
         "10.0.2.2", 32,
-        "00:00:00:00:03:03", "00:00:00:00:01:01", 3,
+        "00:00:00:00:03:03", "00:00:00:00:01:01", 3
     )
     install_fwd_entry(
         p4info, sw, "MyIngress.fwd_vpn",
         "10.0.1.1", 32,
-        "00:00:00:00:01:01", "00:00:00:00:03:03", 1,
+        "00:00:00:00:03:03", "00:00:00:00:02:02", 3
     )
     install_fwd_entry(
         p4info, sw, "MyIngress.fwd_vpn",
         "10.0.3.3", 32,
-        "00:00:00:00:03:03", "00:00:00:00:01:01", 3,
+        "00:00:00:00:03:03", "00:00:00:00:01:01", 3
     )
 
 
-def add_flow_override_tcp_dstport(
-    p4info: P4InfoHelper,
-    sw: Bmv2SwitchConnection,
-    src_ip: str,
-    dst_ip: str,
-    dport: int,
-    use_vpn: int,
-) -> None:
-    entry = p4info.buildTableEntry(
-        table_name="MyIngress.flow_policy",
-        match_fields={
-            "hdr.ipv4.srcAddr": src_ip,
-            "hdr.ipv4.dstAddr": dst_ip,
-            "hdr.ipv4.protocol": 6,
-            "hdr.tcp.dstPort": dport,
-        },
-        action_name="MyIngress.set_use_vpn",
-        action_params={"v": use_vpn},
-    )
-    sw.WriteTableEntry(entry)
-    print(f"[OK] flow_policy TCP: {src_ip} -> {dst_ip}:{dport} use_vpn={use_vpn}")
-
-
-def parse_override(s: str):
-    parts = [x.strip() for x in s.split(",")]
-    if len(parts) != 4:
-        raise ValueError(f"Bad override '{s}'. Expected SRC_IP,DST_IP,DST_PORT,USE_VPN")
-    src_ip, dst_ip, dport_s, vpn_s = parts
-    dport = int(dport_s)
-    use_vpn = int(vpn_s)
-    if use_vpn not in (0, 1):
-        raise ValueError(f"USE_VPN must be 0 or 1 in override '{s}'")
-    return src_ip, dst_ip, dport, use_vpn
-
-
-def main() -> int:
+def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--p4info", default="build/Offload.p4info.txt")
-    parser.add_argument("--bmv2-json", default="build/Offload.json/Offload.json")
+    parser.add_argument("--p4info", default="build/Offload_VPNOnly.p4info.txt")
+    parser.add_argument("--bmv2-json", default="build/Offload_VPNOnly.json/Offload_VPNOnly.json")
     parser.add_argument("--addr", default="127.0.0.1:50051")
     parser.add_argument("--device-id", type=int, default=0)
     parser.add_argument("--keepalive", action="store_true")
-    parser.add_argument(
-        "--override",
-        action="append",
-        default=[],
-        help="Override format: SRC_IP,DST_IP,DST_PORT,USE_VPN",
-    )
-
     args = parser.parse_args()
 
     require_file(args.p4info)
@@ -214,30 +134,18 @@ def main() -> int:
         )
         print("[OK] Pipeline set.")
 
-        print("[*] Installing base rules...")
-        install_base_rules(p4info, sw)
+        print("[*] Installing VPN-only baseline rules...")
+        install_base_rules_vpn_only(p4info, sw)
 
-        for ov in args.override:
-            src_ip, dst_ip, dport, use_vpn = parse_override(ov)
-            add_flow_override_tcp_dstport(
-                p4info, sw,
-                src_ip=src_ip,
-                dst_ip=dst_ip,
-                dport=dport,
-                use_vpn=use_vpn,
-            )
-
-        print("[DONE] Controller finished installing rules.")
+        print("[DONE] VPN-only controller finished installing rules.")
 
         if args.keepalive:
-            print("[*] keepalive enabled; press Ctrl+C to stop.")
             while True:
                 time.sleep(2)
 
         return 0
 
     except KeyboardInterrupt:
-        print("\n[!] Interrupted.")
         return 130
     except Exception as e:
         print(f"[ERROR] {e}", file=sys.stderr)
